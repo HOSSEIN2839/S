@@ -3,7 +3,7 @@ declare(strict_types=1);
 header("Content-Security-Policy: default-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
-require_once dirname(__DIR__).'/app/bootstrap.php';
+require_once __DIR__.'/_bootstrap.php';
 app_start_session();
 if (empty($_SESSION['csrf'])) { $_SESSION['csrf'] = bin2hex(random_bytes(32)); }
 $shopCsrf=(string)$_SESSION['csrf'];
