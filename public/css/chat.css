@@ -58,3 +58,5 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .btn-primary { background: var(--gold); color: #111; font-weight: 700; }
 .btn-ghost { background: transparent; color: var(--gold); border: 1px solid var(--gold-soft); padding: 6px 12px; }
 @media (max-width: 480px) { .msg { max-width: 94%; } }
+
+.card__add{margin-top:8px;text-align:center;padding:8px;border-radius:8px;background:transparent;color:var(--gold);border:1px solid var(--gold-soft);font:inherit;font-weight:700;cursor:pointer}.card__add:disabled{opacity:.6;cursor:wait}
