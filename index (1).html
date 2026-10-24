@@ -389,74 +389,8 @@
         </header>
 
         <!-- ناحیه چت -->
-        <main class="chat-area">
-            
-            <div class="date-divider"><span>امروز</span></div>
+        <main class="chat-area" aria-live="polite"></main>
 
-            <!-- پیام کاربر -->
-            <div class="message-row user">
-                <div class="msg user">ساعت مردانه زیر ۵ میلیون</div>
-            </div>
-
-            <!-- نشانگر تایپ ربات -->
-            <div class="message-row bot">
-                <div class="msg bot typing-indicator">
-                    <span></span><span></span><span></span>
-                </div>
-            </div>
-
-            <!-- پیام کاربر -->
-            <div class="message-row user">
-                <div class="msg user">یک ساعت شیک برای محل کار می‌خوام؛ بودجه‌ام تا ۵ میلیون تومان است.</div>
-            </div>
-
-            <!-- پیام ربات -->
-            <div class="message-row bot">
-                <div class="msg bot">این مدل با صفحه مشکی و بند چرمی، برای استایل رسمی شما عالی است؛ شیک، خوش‌قیمت و مناسب استفاده روزانه.</div>
-            </div>
-
-            <!-- کارت محصول -->
-            <div class="message-row bot" style="width: 100%;">
-                <div class="product-card">
-                    <div class="product-image-container">
-                        <!-- برای عکس از یک تصویر تستی استفاده شده است -->
-                        <img src="https://images.unsplash.com/photo-1524592094714-0f0654e20314?auto=format&fit=crop&q=80&w=600&h=400" alt="ساعت مچی" class="product-image">
-                        <div class="product-badge">✨ پیشنهاد ویژه شما</div>
-                    </div>
-                    <div class="product-info">
-                        <div class="product-title">ساعت مچی کاسیو مدل کلاسیک</div>
-                        <div class="product-specs">بند چرم مشکی • موتور کوارتز • ضمانت اصالت</div>
-                        <div class="product-price-row">
-                            <div class="product-price-label">قیمت نهایی</div>
-                            <div class="product-price">۴,۸۵۰,۰۰۰ <span>تومان</span></div>
-                        </div>
-                        <a href="#" class="btn-buy">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-                            مشاهده محصول در فروشگاه
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- پیام خطا -->
-            <div class="message-row bot" style="width: 100%;">
-                <div class="msg error">ارتباط برقرار نشد. لطفاً دوباره تلاش کنید.</div>
-            </div>
-
-            <!-- پیام ربات (سوال) -->
-            <div class="message-row bot">
-                <div class="msg bot">من فقط در انتخاب ساعت کمک می‌کنم. چه مدلی مدنظرتان است؟</div>
-            </div>
-
-            <!-- دکمه‌های پیشنهادی -->
-            <div class="quick-replies">
-                <button class="quick-reply-btn">ساعت مردانه</button>
-                <button class="quick-reply-btn">ساعت زنانه</button>
-                <button class="quick-reply-btn">ساعت رومیزی</button>
-                <button class="quick-reply-btn">مقایسه دو ساعت</button>
-            </div>
-
-        </main>
 
         <!-- ناحیه ورودی -->
         <footer class="input-area">
@@ -474,27 +408,36 @@
     const sendBtn = document.querySelector('.btn-send');
     const chatArea = document.querySelector('.chat-area');
 
+    function escapeHTML(value) {
+        return String(value).replace(/[&<>"']/g, function (char) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char];
+        });
+    }
+
     function addUserMessage(text) {
-        const userMsgHTML = `
-            <div class="message-row user">
-                <div class="msg user">${text}</div>
-            </div>
-        `;
-        chatArea.insertAdjacentHTML('beforeend', userMsgHTML);
+        const row = document.createElement('div');
+        row.className = 'message-row user';
+        const bubble = document.createElement('div');
+        bubble.className = 'msg user';
+        bubble.textContent = text;
+        row.appendChild(bubble);
+        chatArea.appendChild(row);
+        chatArea.scrollTop = chatArea.scrollHeight;
     }
 
     function addBotMessage(text) {
-        const botMsgHTML = `
-            <div class="message-row bot">
-                <div class="msg bot">${text}</div>
-            </div>
-        `;
-        chatArea.insertAdjacentHTML('beforeend', botMsgHTML);
+        const row = document.createElement('div');
+        row.className = 'message-row bot';
+        const bubble = document.createElement('div');
+        bubble.className = 'msg bot';
+        bubble.textContent = text;
+        row.appendChild(bubble);
+        chatArea.appendChild(row);
         chatArea.scrollTop = chatArea.scrollHeight;
     }
 
     // تابع جدید برای ارسال پیام به PHP
-    async function sendMessageToAPI(messageText) {
+    async function sendMessageToAPI(messageText, isGreeting = false) {
         try {
             // نمایش انیمیشن تایپ کردن
             const typingHTML = `
@@ -513,7 +456,7 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ message: messageText })
+                body: JSON.stringify(isGreeting ? { action: 'greeting' } : { message: messageText })
             });
 
             const data = await response.json();
@@ -536,6 +479,10 @@
         }
     }
 
+    async function showInitialGreeting() {
+        await sendMessageToAPI(null, true);
+    }
+
     function sendMessage() {
         const text = inputField.value.trim();
         if (text === "") return;
@@ -547,6 +494,8 @@
         // ارسال به API
         sendMessageToAPI(text);
     }
+
+    showInitialGreeting();
 
     sendBtn.addEventListener('click', sendMessage);
     inputField.addEventListener('keypress', function (e) {
