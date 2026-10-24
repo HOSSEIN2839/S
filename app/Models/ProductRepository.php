@@ -28,7 +28,7 @@ final class ProductRepository
             p.is_purchasable,
             COALESCE(p.short_description, p.description, '') AS description,
             COALESCE(attrs.features, '') AS features,
-            COALESCE(img.image_url, '') AS image_url,
+            COALESCE((SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.sort_order ASC, pi.id ASC LIMIT 1), '') AS image_url,
             COALESCE(p.product_url, '') AS product_url
         FROM products p
         LEFT JOIN brands b ON b.id = p.brand_id
@@ -82,9 +82,13 @@ final class ProductRepository
                 static fn(string $token): bool => mb_strlen($token) >= 2
             )), 0, 5);
             foreach ($tokens as $i => $token) {
-                $key = ':q' . $i;
-                $where[] = "(p.name LIKE $key OR p.short_description LIKE $key OR p.description LIKE $key OR b.name LIKE $key OR cats.category_name LIKE $key OR EXISTS (SELECT 1 FROM product_attributes pa WHERE pa.product_id = p.id AND pa.attribute_value LIKE $key))";
-                $params[$key] = '%' . Text::escapeLike($token) . '%';
+                $like = '%' . Text::escapeLike($token) . '%';
+                $keys = [];
+                foreach (['name', 'short', 'description', 'brand', 'category', 'attribute'] as $column) {
+                    $keys[$column] = ':q' . $i . '_' . $column;
+                    $params[$keys[$column]] = $like;
+                }
+                $where[] = "(p.name LIKE {$keys['name']} OR p.short_description LIKE {$keys['short']} OR p.description LIKE {$keys['description']} OR b.name LIKE {$keys['brand']} OR cats.category_name LIKE {$keys['category']} OR EXISTS (SELECT 1 FROM product_attributes pa WHERE pa.product_id = p.id AND pa.attribute_value LIKE {$keys['attribute']}))";
             }
         }
 
