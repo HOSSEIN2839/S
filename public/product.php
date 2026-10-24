@@ -5,7 +5,8 @@ header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 require_once dirname(__DIR__).'/app/bootstrap.php';
 app_start_session();
-$shopCsrf=(string)($_SESSION['csrf']??'');
+if (empty($_SESSION['csrf'])) { $_SESSION['csrf'] = bin2hex(random_bytes(32)); }
+$shopCsrf=(string)$_SESSION['csrf'];
 function h(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function toman(mixed $v): string { return number_format((int)$v).' تومان'; }
 $id=filter_input(INPUT_GET,'id',FILTER_VALIDATE_INT);
