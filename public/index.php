@@ -1,33 +1,23 @@
 <?php
 declare(strict_types=1);
-header("Content-Security-Policy: default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+header("Content-Security-Policy: default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
 header('X-Content-Type-Options: nosniff');
-header('Referrer-Policy: no-referrer');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+$products=[]; $pageError=false;
+try { require_once dirname(__DIR__).'/app/bootstrap.php'; $products=(new \App\Models\ProductRepository())->search(null,null,null,null,24); }
+catch (\Throwable $e) { $pageError=true; error_log('[shop-home] '.$e->getMessage()); }
+function h(mixed $value): string { return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
+function toman(mixed $value): string { return number_format((int)$value).' تومان'; }
 ?>
-<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>دستیار خرید هوشمند</title>
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-<main class="chat">
-    <header class="chat__header">
-        <h1>دستیار خرید هوشمند</h1>
-        <button id="new-chat" type="button" class="btn-ghost">گفتگوی جدید</button>
-    </header>
-
-    <section id="messages" class="chat__messages" aria-live="polite"></section>
-
-    <div id="status" class="chat__status" role="status"></div>
-
-    <div class="chat__composer">
-        <textarea id="input" rows="1" maxlength="500" placeholder="مثلاً: یک ساعت مردانه تا ۶ میلیون می‌خواهم" aria-label="پیام شما"></textarea>
-        <button id="send" type="button" class="btn-primary">ارسال</button>
-    </div>
-</main>
-<script src="js/chat.js"></script>
-</body>
-</html>
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111318"><title>بازار | فروشگاه هوشمند</title><meta name="description" content="محصولات فروشگاه را ببینید و برای انتخاب بهتر از دستیار خرید هوشمند کمک بگیرید."><link rel="stylesheet" href="css/style.css"></head>
+<body class="shop-home">
+<header class="site-header"><a class="brand" href="index.php" aria-label="صفحه اصلی بازار"><span class="brand-mark">ب</span><span>بازار<small>خرید هوشمند، انتخاب بهتر</small></span></a><nav class="site-nav" aria-label="ناوبری اصلی"><a class="nav-active" href="index.php">خانه</a><a href="#products">محصولات</a><a href="#assistant">دستیار خرید</a></nav><a class="header-cta" href="#assistant">راهنمایی خرید <span aria-hidden="true">←</span></a></header>
+<main><section class="hero"><div class="hero-copy"><span class="eyebrow"><span class="live-dot"></span> انتخاب آگاهانه‌تر با دستیار هوشمند</span><h1>محصول مناسب خودت را<br><span>ساده‌تر پیدا کن.</span></h1><p>محصولات را بررسی کن، قیمت‌ها را مقایسه کن و اگر برای انتخاب نیاز به کمک داری، از دستیار خرید بپرس.</p><div class="hero-actions"><a class="button button-primary" href="#products">دیدن محصولات <span>↓</span></a><a class="button button-secondary" href="#assistant">گفتگو با دستیار</a></div><div class="hero-notes"><span>✓ قیمت بر اساس اطلاعات فروشگاه</span><span>✓ پیشنهاد از محصولات ثبت‌شده</span></div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="hero-center"><span class="hero-star">✦</span><span>انتخاب هوشمند</span><small>SMART SHOPPING</small></div><div class="floating-chip chip-top">✦ مقایسه آسان</div><div class="floating-chip chip-bottom">✓ انتخاب مطمئن‌تر</div></div></section>
+<section class="section products-section" id="products"><div class="section-heading"><div><span class="eyebrow">ویترین فروشگاه</span><h2>محصولات فروشگاه</h2><p>قیمت و موجودی از اطلاعات ثبت‌شده در فروشگاه خوانده می‌شود.</p></div><span class="product-count"><?= count($products) ?> محصول</span></div>
+<?php if($pageError): ?><div class="state-panel"><span class="state-icon">!</span><h3>اتصال به فروشگاه در دسترس نیست</h3><p>تنظیمات اتصال به دیتابیس را بررسی کنید. جزئیات خطا فقط در گزارش سرور ثبت شده است.</p></div>
+<?php elseif(!$products): ?><div class="state-panel"><span class="state-icon">⌕</span><h3>فعلاً محصولی برای نمایش نیست</h3><p>پس از اتصال دیتابیس و ثبت محصولات، فهرست اینجا نمایش داده می‌شود.</p></div>
+<?php else: ?><div class="product-grid"><?php foreach($products as $product): ?><article class="product-card"><a class="product-image-wrap" href="<?= h($product['product_url'] ?: '#assistant') ?>" <?= !empty($product['product_url'])?'target="_blank" rel="noopener noreferrer"':'' ?>>
+<?php if(!empty($product['image_url']) && filter_var($product['image_url'],FILTER_VALIDATE_URL) && in_array(strtolower((string)parse_url($product['image_url'],PHP_URL_SCHEME)),['https','http'],true)): ?><img src="<?= h($product['image_url']) ?>" alt="<?= h($product['name']) ?>" loading="lazy"><?php else: ?><span class="image-placeholder" aria-label="تصویر موجود نیست">✦</span><?php endif; ?>
+<?php if(!empty($product['in_stock'])): ?><span class="stock-badge"><i></i> موجود</span><?php else: ?><span class="stock-badge stock-out">ناموجود</span><?php endif; ?></a><div class="product-info"><?php if(!empty($product['category'])): ?><span class="product-category"><?= h($product['category']) ?></span><?php endif; ?><h3><?= h($product['name']) ?></h3><?php if(!empty($product['brand'])): ?><p class="product-brand"><?= h($product['brand']) ?></p><?php endif; ?><div class="product-bottom"><div><strong><?= h(toman($product['final_price']??0)) ?></strong><small>قیمت نهایی</small></div><?php if(!empty($product['product_url']) && filter_var($product['product_url'],FILTER_VALIDATE_URL)): ?><a class="product-link" href="<?= h($product['product_url']) ?>" target="_blank" rel="noopener noreferrer" aria-label="مشاهده <?= h($product['name']) ?>">←</a><?php else: ?><a class="product-link" href="#assistant" aria-label="پرسش درباره محصول">؟</a><?php endif; ?></div></div></article><?php endforeach; ?></div><?php endif; ?></section>
+<section class="assistant-banner" id="assistant"><div class="assistant-symbol">✧</div><div><span class="eyebrow">برای انتخاب بهتر</span><h2>هنوز مطمئن نیستی کدام محصول مناسب توست؟</h2><p>نیازت را به زبان ساده بنویس؛ دستیار از محصولات موجود فروشگاه برای راهنمایی استفاده می‌کند.</p></div><a class="button button-primary" href="chat.php">شروع گفتگو <span>←</span></a></section></main>
+<footer class="site-footer"><a class="brand brand-small" href="index.php"><span class="brand-mark">ب</span><span>بازار</span></a><p>قیمت‌ها مطابق اطلاعات ثبت‌شده در فروشگاه هستند.</p><a href="chat.php">دستیار خرید هوشمند</a></footer></body></html>
