@@ -43,18 +43,6 @@ final class ProductRepository
             FROM product_attributes
             GROUP BY product_id
         ) attrs ON attrs.product_id = p.id
-        LEFT JOIN (
-            SELECT pi.product_id, pi.image_url
-            FROM product_images pi
-            INNER JOIN (
-                SELECT product_id, MIN(CASE WHEN is_primary = 1 THEN 0 ELSE 1 END) AS primary_rank,
-                       MIN(sort_order) AS first_order
-                FROM product_images
-                GROUP BY product_id
-            ) chosen ON chosen.product_id = pi.product_id
-            WHERE pi.is_primary = 1 OR pi.sort_order = chosen.first_order
-            GROUP BY pi.product_id
-        ) img ON img.product_id = p.id
     ";
 
     public function search(?string $query, ?string $category, ?int $maxPrice, ?string $brand, int $limit = 5): array
