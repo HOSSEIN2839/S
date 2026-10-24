@@ -10,7 +10,7 @@ return [
     'temperature' => 0.3,
     'max_output_tokens' => 700,
     'max_tokens_param' => 'max_tokens',
-    'timeout_seconds' => 30,
-    'connect_timeout_seconds' => 10,
+    'timeout' => 30,
+    'connect_timeout' => 10,
     'retries' => 1,
 ];
