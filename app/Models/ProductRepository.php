@@ -8,96 +8,104 @@ use App\Support\Text;
 use PDO;
 
 /**
- * خواندن محصولات از دیتابیس. این کلاس فقط SELECT می‌زند؛ دستیار هرگز چیزی در دیتابیس نمی‌نویسد.
- * همه ورودی‌ها با Prepared Statement به SQL می‌روند (بدون جمع‌کردن رشته).
+ * Read-only repository for the canonical smart_shop WooCommerce schema.
+ * Internal products.id is used for conversation/tool references; source_product_id
+ * is retained only as the external WooCommerce identifier.
  */
-class ProductRepository
+final class ProductRepository
 {
-    private const SELECT = 'SELECT p.id, p.woo_id, p.name, p.brand, p.category_id, p.base_price, p.discount_percent,
-                                   p.in_stock, p.description, p.features, p.image, p.product_url, c.name AS category_name
-                            FROM products p LEFT JOIN categories c ON c.id = p.category_id';
+    private const SELECT = "
+        SELECT
+            p.id,
+            p.source_product_id,
+            p.name,
+            COALESCE(b.name, '') AS brand,
+            COALESCE(cats.category_name, '') AS category_name,
+            p.current_price,
+            p.regular_price,
+            p.sale_price,
+            p.stock_status,
+            p.is_purchasable,
+            COALESCE(p.short_description, p.description, '') AS description,
+            COALESCE(attrs.features, '') AS features,
+            COALESCE((SELECT pi.image_url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.is_primary DESC, pi.sort_order ASC, pi.id ASC LIMIT 1), '') AS image_url,
+            COALESCE(p.product_url, '') AS product_url
+        FROM products p
+        LEFT JOIN brands b ON b.id = p.brand_id
+        LEFT JOIN (
+            SELECT pc.product_id, GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ', ') AS category_name
+            FROM product_categories pc
+            INNER JOIN categories c ON c.id = pc.category_id
+            GROUP BY pc.product_id
+        ) cats ON cats.product_id = p.id
+        LEFT JOIN (
+            SELECT product_id, GROUP_CONCAT(CONCAT(attribute_name, ': ', attribute_value) ORDER BY sort_order SEPARATOR '; ') AS features
+            FROM product_attributes
+            GROUP BY product_id
+        ) attrs ON attrs.product_id = p.id
+        LEFT JOIN (
+            SELECT pi.product_id, pi.image_url
+            FROM product_images pi
+            INNER JOIN (
+                SELECT product_id, MIN(CASE WHEN is_primary = 1 THEN 0 ELSE 1 END) AS primary_rank,
+                       MIN(sort_order) AS first_order
+                FROM product_images
+                GROUP BY product_id
+            ) chosen ON chosen.product_id = pi.product_id
+            WHERE pi.is_primary = 1 OR pi.sort_order = chosen.first_order
+            GROUP BY pi.product_id
+        ) img ON img.product_id = p.id
+    ";
 
-    /**
-     * @return array<int,array<string,mixed>> حداکثر $limit محصول موجود با قیمت نهایی
-     */
     public function search(?string $query, ?string $category, ?int $maxPrice, ?string $brand, int $limit = 5): array
     {
-        $where = ['p.in_stock = 1'];
+        $where = ["p.stock_status = 'in_stock'", 'p.is_purchasable = 1', 'p.current_price IS NOT NULL', 'p.current_price >= 0'];
         $params = [];
 
-        if ($category !== null && $category !== '') {
-            $where[] = 'c.name = :category';
-            $params[':category'] = $category;
+        if ($category !== null && trim($category) !== '') {
+            $where[] = 'cats.category_name LIKE :category';
+            $params[':category'] = '%' . Text::escapeLike(trim($category)) . '%';
         }
-        if ($brand !== null && $brand !== '') {
-            $where[] = 'p.brand LIKE :brand';
-            $params[':brand'] = '%' . Text::escapeLike($brand) . '%';
+        if ($brand !== null && trim($brand) !== '') {
+            $where[] = 'b.name LIKE :brand';
+            $params[':brand'] = '%' . Text::escapeLike(trim($brand)) . '%';
+        }
+        if ($maxPrice !== null && $maxPrice > 0) {
+            $where[] = 'p.current_price <= :max_price';
+            $params[':max_price'] = $maxPrice;
         }
 
         $tokens = [];
         if ($query !== null && trim($query) !== '') {
             $tokens = array_slice(array_values(array_filter(
-                preg_split('/\s+/u', trim($query)) ?: [],
-                static fn(string $t): bool => mb_strlen($t) >= 2
-            )), 0, 4);
-            if ($tokens !== []) {
-                // با PDO در حالت native هر نام پارامتر فقط یک بار می‌تواند در SQL بیاید؛ پس برای هر ستون یک نام جدا
-                $parts = [];
-                foreach ($tokens as $i => $token) {
-                    $like = '%' . Text::escapeLike($token) . '%';
-                    $keys = [];
-                    foreach (['n', 'b', 'd', 'f'] as $col) {
-                        $keys[$col] = ':q' . $i . $col;
-                        $params[$keys[$col]] = $like;
-                    }
-                    $parts[] = '(p.name LIKE ' . $keys['n'] . ' OR p.brand LIKE ' . $keys['b']
-                        . ' OR p.description LIKE ' . $keys['d'] . ' OR p.features LIKE ' . $keys['f'] . ')';
+                preg_split('/\s+/u', trim(Text::normalize($query))) ?: [],
+                static fn(string $token): bool => mb_strlen($token) >= 2
+            )), 0, 5);
+            foreach ($tokens as $i => $token) {
+                $like = '%' . Text::escapeLike($token) . '%';
+                $keys = [];
+                foreach (['name', 'short', 'description', 'brand', 'category', 'attribute'] as $column) {
+                    $keys[$column] = ':q' . $i . '_' . $column;
+                    $params[$keys[$column]] = $like;
                 }
-                $where[] = '(' . implode(' OR ', $parts) . ')';
+                $where[] = "(p.name LIKE {$keys['name']} OR p.short_description LIKE {$keys['short']} OR p.description LIKE {$keys['description']} OR b.name LIKE {$keys['brand']} OR cats.category_name LIKE {$keys['category']} OR EXISTS (SELECT 1 FROM product_attributes pa WHERE pa.product_id = p.id AND pa.attribute_value LIKE {$keys['attribute']}))";
             }
         }
 
-        $sql = self::SELECT . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY p.id ASC LIMIT 200';
+        $sql = self::SELECT . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY p.current_price ASC, p.id ASC LIMIT ' . max(1, min(5, $limit));
         $stmt = Db::pdo()->prepare($sql);
-        foreach ($params as $k => $v) {
-            $stmt->bindValue($k, $v, PDO::PARAM_STR);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
         }
         $stmt->execute();
 
-        $items = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $p = $this->map($row);
-            if ($maxPrice !== null && $maxPrice > 0 && $p['final_price'] > $maxPrice) {
-                continue;
-            }
-            $p['_score'] = $this->score($p, $tokens);
-            $items[] = $p;
-        }
-
-        // اول بیشترین تطابق با کلمات؛ بعد اگر بودجه گفته شده، نزدیک‌ترین به بودجه؛ وگرنه ارزان‌تر اول
-        $budget = ($maxPrice !== null && $maxPrice > 0);
-        usort($items, static function (array $a, array $b) use ($budget): int {
-            if ($a['_score'] !== $b['_score']) {
-                return $b['_score'] <=> $a['_score'];
-            }
-            return $budget ? ($b['final_price'] <=> $a['final_price']) : ($a['final_price'] <=> $b['final_price']);
-        });
-
-        $items = array_slice($items, 0, max(1, $limit));
-        foreach ($items as &$it) {
-            unset($it['_score']);
-        }
-        unset($it);
-        return $items;
+        return array_map(fn(array $row): array => $this->map($row), $stmt->fetchAll());
     }
 
-    /**
-     * @param int[] $ids
-     * @return array<int,array<string,mixed>> به ترتیب ids (فقط محصولات موجود در دیتابیس)
-     */
+    /** @param int[] $ids */
     public function findByIds(array $ids): array
     {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $i): bool => $i > 0)));
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id): bool => $id > 0)));
         if ($ids === []) {
             return [];
         }
@@ -109,8 +117,8 @@ class ProductRepository
         $stmt->execute();
         $byId = [];
         foreach ($stmt->fetchAll() as $row) {
-            $p = $this->map($row);
-            $byId[$p['id']] = $p;
+            $product = $this->map($row);
+            $byId[$product['id']] = $product;
         }
         $ordered = [];
         foreach ($ids as $id) {
@@ -121,40 +129,23 @@ class ProductRepository
         return $ordered;
     }
 
-    /** @param array<string,mixed> $row */
     private function map(array $row): array
     {
-        $base = (int) $row['base_price'];
-        $disc = (int) $row['discount_percent'];
+        $price = (int) round((float) $row['current_price']);
         return [
-            'id'               => (int) $row['id'],
-            'name'             => (string) $row['name'],
-            'brand'            => (string) ($row['brand'] ?? ''),
-            'category'         => (string) ($row['category_name'] ?? ''),
-            'base_price'       => $base,
-            'discount_percent' => $disc,
-            'final_price'      => PriceCalculator::finalPrice($base, $disc),
-            'in_stock'         => (int) $row['in_stock'] === 1,
-            'description'      => (string) ($row['description'] ?? ''),
-            'features'         => (string) ($row['features'] ?? ''),
-            'image_url'        => (string) ($row['image'] ?? ''),
-            'product_url'      => (string) ($row['product_url'] ?? ''),
+            'id' => (int) $row['id'],
+            'source_product_id' => (int) $row['source_product_id'],
+            'name' => (string) $row['name'],
+            'brand' => (string) $row['brand'],
+            'category' => (string) $row['category_name'],
+            'base_price' => $price,
+            'discount_percent' => 0,
+            'final_price' => $price,
+            'in_stock' => $row['stock_status'] === 'in_stock' && (int) $row['is_purchasable'] === 1,
+            'description' => (string) $row['description'],
+            'features' => (string) $row['features'],
+            'image_url' => (string) $row['image_url'],
+            'product_url' => (string) $row['product_url'],
         ];
-    }
-
-    /** @param array<string,mixed> $p @param string[] $tokens */
-    private function score(array $p, array $tokens): int
-    {
-        if ($tokens === []) {
-            return 0;
-        }
-        $hay = mb_strtolower($p['name'] . ' ' . $p['brand'] . ' ' . $p['description'] . ' ' . $p['features']);
-        $score = 0;
-        foreach ($tokens as $t) {
-            if (mb_strpos($hay, mb_strtolower($t)) !== false) {
-                $score++;
-            }
-        }
-        return $score;
     }
 }
