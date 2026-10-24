@@ -6,8 +6,8 @@ require_once __DIR__ . '/vendor/autoload.php';
 // خواندن کلید از متغیر محیطی یا فایل خصوصی سرور
 $apiKey = getenv('AVALAI_API_KEY');
 
-if (!$apiKey && is_readable('/root/.avalai_env')) {
-    $envLines = file('/root/.avalai_env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+if (!$apiKey && is_readable('/etc/avalai.env')) {
+    $envLines = file('/etc/avalai.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
     foreach ($envLines as $line) {
         $line = trim($line);
