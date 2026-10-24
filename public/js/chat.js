@@ -54,18 +54,41 @@
 
             if (p.product_url) {
                 var a = document.createElement('a');
-                a.href = p.product_url;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer';
-                a.textContent = 'مشاهده در فروشگاه';
+                a.href = 'product.php?id=' + encodeURIComponent(String(p.id || ''));
+                a.textContent = 'مشاهده محصول';
                 body.appendChild(a);
             }
 
+            var add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'card__add';
+            add.textContent = 'افزودن به سبد خرید';
+            add.addEventListener('click', function () { addToCart(p.id, add); });
+            body.appendChild(add);
             card.appendChild(body);
             wrap.appendChild(card);
         });
         messagesEl.appendChild(wrap);
         scrollDown();
+    }
+
+    function addToCart(id, button) {
+        if (!id || !csrf || button.disabled) { return; }
+        button.disabled = true;
+        var previous = button.textContent;
+        button.textContent = 'در حال افزودن…';
+        postJson('api/cart.php', { product_id: Number(id), quantity: 1 }, { 'X-CSRF-Token': csrf })
+            .then(function (res) {
+                if (res.body && res.body.ok) {
+                    button.textContent = 'افزوده شد ✓';
+                } else {
+                    button.textContent = (res.body && res.body.message) || 'افزودن ناموفق';
+                }
+            }).catch(function () {
+                button.textContent = 'خطای اتصال';
+            }).then(function () {
+                window.setTimeout(function () { button.textContent = previous; button.disabled = false; }, 1800);
+            });
     }
 
     function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
