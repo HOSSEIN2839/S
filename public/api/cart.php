@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once dirname(__DIR__, 2).'/app/bootstrap.php';
+require_once dirname(__DIR__).'/_bootstrap.php';
 use App\Models\ProductRepository;
 use App\Support\Db;
 use App\Support\Config;
