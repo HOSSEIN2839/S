@@ -12,7 +12,7 @@ function respond($text, $statusCode = 200) {
 }
 
 /**
- * دریافت کلید از متغیر محیطی؛ در صورت نبودن، فایل خصوصی /root/.avalai_env خوانده می‌شود.
+ * دریافت کلید از متغیر محیطی؛ در صورت نبودن، فایل خصوصی /etc/avalai.env خوانده می‌شود.
  * فرمت فایل:
  * AVALAI_API_KEY=کلید_واقعی
  */
@@ -23,7 +23,7 @@ function loadAvalAIKey() {
         return trim($apiKey);
     }
 
-    $envFile = '/root/.avalai_env';
+    $envFile = '/etc/avalai.env';
 
     // فایل باید خارج از پوشه عمومی سایت بماند.
     if (!is_file($envFile) || !is_readable($envFile)) {
@@ -64,9 +64,10 @@ if (!is_array($data)) {
     respond('ساختار درخواست نامعتبر است.', 400);
 }
 
-$userMessage = isset($data['message']) && is_string($data['message'])
-    ? trim($data['message'])
-    : '';
+$isGreeting = isset($data['action']) && $data['action'] === 'greeting';
+$userMessage = $isGreeting
+    ? 'یک پیام خوشامدگویی کوتاه و دوستانه به زبان فارسی برای شروع گفت‌وگو با دستیار خرید ساعت بنویس. فقط خود پیام خوشامدگویی را بگو و از عبارت «سلام، چطور می‌تونم کمکتون کنم؟» یا عبارتی طبیعی با همین معنا استفاده کن.'
+    : (isset($data['message']) && is_string($data['message']) ? trim($data['message']) : '');
 
 if ($userMessage === '') {
     respond('لطفاً پیام خود را وارد کنید.', 400);
