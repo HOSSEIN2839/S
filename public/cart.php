@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once dirname(__DIR__).'/app/bootstrap.php';
+require_once __DIR__.'/_bootstrap.php';
 app_start_session();
 $cart=is_array($_SESSION['cart']??null)?$_SESSION['cart']:[];
 $products=$cart?(new \App\Models\ProductRepository())->findByIds(array_map('intval',array_keys($cart))):[];

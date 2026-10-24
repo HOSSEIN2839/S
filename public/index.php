@@ -4,7 +4,7 @@ header("Content-Security-Policy: default-src 'self'; img-src 'self' https: data:
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 $products=[]; $pageError=false;
-try { require_once dirname(__DIR__).'/app/bootstrap.php'; $products=(new \App\Models\ProductRepository())->search(null,null,null,null,24); }
+try { require_once __DIR__.'/_bootstrap.php'; $products=(new \App\Models\ProductRepository())->search(null,null,null,null,24); }
 catch (\Throwable $e) { $pageError=true; error_log('[shop-home] '.$e->getMessage()); }
 function h(mixed $value): string { return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function toman(mixed $value): string { return number_format((int)$value).' تومان'; }
