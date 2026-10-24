@@ -1,0 +1,34 @@
+name: PHP syntax checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Lint all PHP files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find app public -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Check storefront and cart endpoints exist
+        shell: bash
+        run: |
+          test -f public/index.php
+          test -f public/chat.php
+          test -f public/product.php
+          test -f public/cart.php
+          test -f public/api/cart.php
+          grep -q "product.php?id=" public/js/chat.js
+          grep -q "X-CSRF-Token" public/js/chat.js
