@@ -1,0 +1,13 @@
+<?php
+declare(strict_types=1);
+header("Content-Security-Policy: default-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+require_once dirname(__DIR__).'/app/bootstrap.php';
+function h(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
+function toman(mixed $v): string { return number_format((int)$v).' تومان'; }
+$id=filter_input(INPUT_GET,'id',FILTER_VALIDATE_INT);
+$product=$id ? (new \App\Models\ProductRepository())->findByIds([$id])[0] ?? null : null;
+http_response_code($product ? 200 : 404);
+?>
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><?= $product ? h($product['name']).' | بازار' : 'محصول پیدا نشد | بازار' ?></title><link rel="stylesheet" href="css/shop.css"></head><body class="shop-home"><header class="site-header"><a class="brand" href="index.php"><span class="brand-mark">ب</span><span>بازار<small>خرید هوشمند، انتخاب بهتر</small></span></a><nav class="site-nav"><a href="index.php">بازگشت به فروشگاه</a><a href="chat.php">دستیار خرید</a></nav></header><main class="product-detail-page"><?php if(!$product): ?><section class="state-panel"><h1>محصول پیدا نشد</h1><p>این محصول وجود ندارد یا شناسه آن معتبر نیست.</p><a class="button button-primary" href="index.php">بازگشت به فروشگاه</a></section><?php else: ?><article class="product-detail"><div class="product-detail-image"><?php if($product['image_url']): ?><img src="<?= h($product['image_url']) ?>" alt="<?= h($product['name']) ?>"><?php else: ?><span class="image-placeholder">✦</span><?php endif; ?></div><div class="product-detail-info"><?php if($product['category']): ?><span class="eyebrow"><?= h($product['category']) ?></span><?php endif; ?><h1><?= h($product['name']) ?></h1><?php if($product['brand']): ?><p><?= h($product['brand']) ?></p><?php endif; ?><strong class="detail-price"><?= h(toman($product['final_price'])) ?></strong><p><?= nl2br(h($product['description'])) ?></p><p><?= $product['in_stock'] ? 'موجود و قابل خرید' : 'در حال حاضر قابل خرید نیست' ?></p><button class="button button-primary" type="button" id="add-cart" data-id="<?= (int)$product['id'] ?>" <?= !$product['in_stock']?'disabled':'' ?>>افزودن به سبد خرید</button><p id="cart-status" role="status"></p><a class="button button-secondary" href="chat.php">پرسیدن از دستیار خرید</a></div></article><?php endif; ?></main><script src="js/product.js" defer></script></body></html>
