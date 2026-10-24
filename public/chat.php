@@ -16,6 +16,7 @@ header('Referrer-Policy: no-referrer');
 <main class="chat">
     <header class="chat__header">
         <h1>دستیار خرید هوشمند</h1>
+        <a class="btn-ghost" href="cart.php">سبد خرید</a>
         <button id="new-chat" type="button" class="btn-ghost">گفتگوی جدید</button>
     </header>
 
