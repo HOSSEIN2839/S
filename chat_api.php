@@ -1,89 +1,149 @@
 <?php
-// فایل: chat_api.php — دریافت پیام از صفحه چت و فرستادن آن به هوش مصنوعی (آوالای)
-header("Content-Type: application/json; charset=UTF-8");
+// chat_api.php — دریافت پیام چت و ارسال آن به AvalAI
+header('Content-Type: application/json; charset=UTF-8');
 
-// برای عیب‌یابی در زمان ساخت true بماند؛ هنگام تحویل نهایی false شود
-$DEBUG = true;
+// جزئیات خطاها فقط در لاگ سرور ثبت شوند، نه در پاسخ قابل مشاهده برای کاربران.
+$DEBUG = false;
 
-function respond($text) {
-    echo json_encode(["reply" => $text], JSON_UNESCAPED_UNICODE);
+function respond($text, $statusCode = 200) {
+    http_response_code($statusCode);
+    echo json_encode(['reply' => $text], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 
-// فقط درخواست POST پذیرفته می‌شود
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    respond("درخواست نامعتبر است.");
+/**
+ * دریافت کلید از متغیر محیطی؛ در صورت نبودن، فایل خصوصی /root/.avalai_env خوانده می‌شود.
+ * فرمت فایل:
+ * AVALAI_API_KEY=کلید_واقعی
+ */
+function loadAvalAIKey() {
+    $apiKey = getenv('AVALAI_API_KEY');
+
+    if (is_string($apiKey) && trim($apiKey) !== '') {
+        return trim($apiKey);
+    }
+
+    $envFile = '/root/.avalai_env';
+
+    // فایل باید خارج از پوشه عمومی سایت بماند.
+    if (!is_file($envFile) || !is_readable($envFile)) {
+        return '';
+    }
+
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        return '';
+    }
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+
+        if ($line === '' || str_starts_with($line, '#')) {
+            continue;
+        }
+
+        if (strpos($line, 'AVALAI_API_KEY=') === 0) {
+            return trim(substr($line, strlen('AVALAI_API_KEY=')), " \t\n\r\0\x0B\"'");
+        }
+    }
+
+    return '';
 }
 
-// ۱) دریافت پیام کاربر از جاوااسکریپت
-$data = json_decode(file_get_contents("php://input"));
-$userMessage = isset($data->message) ? trim((string)$data->message) : '';
+// فقط درخواست POST پذیرفته می‌شود.
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    header('Allow: POST');
+    respond('درخواست نامعتبر است.', 405);
+}
+
+// بررسی نوع و محتوای درخواست JSON.
+$rawBody = file_get_contents('php://input');
+$data = json_decode($rawBody ?: '', true);
+
+if (!is_array($data)) {
+    respond('ساختار درخواست نامعتبر است.', 400);
+}
+
+$userMessage = isset($data['message']) && is_string($data['message'])
+    ? trim($data['message'])
+    : '';
 
 if ($userMessage === '') {
-    respond("پیامی دریافت نشد.");
-}
-if (mb_strlen($userMessage) > 500) {
-    respond("پیام شما خیلی طولانی است (حداکثر ۵۰۰ حرف).");
+    respond('لطفاً پیام خود را وارد کنید.', 400);
 }
 
-// ۲) خواندن کلید از فایل config/secrets.php (کلید هرگز داخل این فایل نوشته نمی‌شود)
-$secretsFile = __DIR__ . '/config/secrets.php';
-if (!file_exists($secretsFile)) {
-    respond("تنظیمات سرور کامل نیست (فایل config/secrets.php پیدا نشد).");
+if (function_exists('mb_strlen')) {
+    if (mb_strlen($userMessage, 'UTF-8') > 500) {
+        respond('پیام شما خیلی طولانی است (حداکثر ۵۰۰ حرف).', 413);
+    }
+} elseif (strlen($userMessage) > 2000) {
+    respond('پیام شما خیلی طولانی است.', 413);
 }
-$secrets = require $secretsFile;
-$apiKey  = $secrets['api_key'] ?? '';
+
+if (!function_exists('curl_init')) {
+    error_log('AvalAI error: PHP cURL extension is not enabled.');
+    respond('سرویس هوش مصنوعی فعلاً در دسترس نیست.', 500);
+}
+
+$apiKey = loadAvalAIKey();
 if ($apiKey === '') {
-    respond("کلید API تنظیم نشده است.");
+    error_log('AvalAI error: API key not found or not readable by the PHP process.');
+    respond('تنظیمات اتصال هوش مصنوعی روی سرور کامل نیست.', 500);
 }
 
-$apiUrl = "https://api.avalai.ir/v1/chat/completions";
-$model  = "gpt-5.4-mini";   // نام مدل را از https://api.avalai.ir/public/models بردار
+$apiUrl = 'https://api.avalai.ir/v1/chat/completions';
+$model = 'gpt-5.4-mini';
 
-// ۳) دستورالعمل دستیار
 $systemPrompt = "شما یک دستیار خرید هوشمند برای فروشگاه ساعت هستید.
-فقط و فقط به سوالات مربوط به ساعت (مردانه، زنانه، رومیزی، برند، قیمت، بند و...) پاسخ دهید.
-اگر کاربر سوالی پرسید که ربطی به ساعت نداشت (مثلاً قیمت گوشی، لباس، هوا و...)، دقیقاً این جمله را بگویید:
-'سوال شما نامرتبط با این سایت است. لطفاً سوال‌های مربوط به ساعت را بپرسید.'
-هرگز اسم محصول یا قیمت از خودتان نسازید. اگر فهرست محصولات در اختیارتان نیست، صادقانه بگویید فعلاً به فهرست محصولات دسترسی ندارید.
+فقط به پرسش‌های مربوط به ساعت پاسخ دهید.
+اگر پرسش نامرتبط بود، دقیقاً بگویید:
+سوال شما نامرتبط با این سایت است. لطفاً سوال‌های مربوط به ساعت را بپرسید.
+هرگز نام محصول، قیمت یا موجودی را حدس نزنید. در حال حاضر فهرست واقعی محصولات به شما داده نشده است؛ اگر کاربر درباره محصول مشخصی پرسید، صادقانه بگویید که برای اعلام اطلاعات دقیق باید فهرست محصولات بررسی شود.
 پاسخ‌ها کوتاه، مفید و دوستانه باشند.";
 
-// ۴) ساخت درخواست (بدون temperature؛ بعضی مدل‌های جدید مقدار دلخواه آن را رد می‌کنند)
 $postData = json_encode([
-    "model"    => $model,
-    "messages" => [
-        ["role" => "system", "content" => $systemPrompt],
-        ["role" => "user",   "content" => $userMessage]
-    ]
+    'model' => $model,
+    'messages' => [
+        ['role' => 'system', 'content' => $systemPrompt],
+        ['role' => 'user', 'content' => $userMessage],
+    ],
 ], JSON_UNESCAPED_UNICODE);
 
-// ۵) ارسال با cURL (بررسی SSL فعال است)
+if ($postData === false) {
+    error_log('AvalAI error: could not encode request JSON.');
+    respond('امکان آماده‌سازی درخواست وجود ندارد.', 500);
+}
+
 $ch = curl_init($apiUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/json',
-    'Authorization: Bearer ' . $apiKey
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => $postData,
+    CURLOPT_TIMEOUT => 30,
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $apiKey,
+    ],
+    // اعتبارسنجی TLS در حالت پیش‌فرض cURL فعال می‌ماند.
 ]);
-$response  = curl_exec($ch);
-$httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+$response = curl_exec($ch);
+$httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// ۶) پردازش جواب
-if ($response !== false && $httpCode == 200) {
+if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
     $responseData = json_decode($response, true);
-    $botReply = $responseData['choices'][0]['message']['content'] ?? "پاسخ نامشخصی از سرور دریافت شد.";
-    respond($botReply);
+    $botReply = $responseData['choices'][0]['message']['content'] ?? null;
+
+    if (is_string($botReply) && trim($botReply) !== '') {
+        respond(trim($botReply));
+    }
+
+    error_log('AvalAI error: response did not contain message content.');
+    respond('پاسخ قابل استفاده‌ای از هوش مصنوعی دریافت نشد.', 502);
 }
 
-// خطا: جزئیات فقط در حالت DEBUG نشان داده می‌شود
-error_log("AI error: status=$httpCode curl=$curlError");
-$msg = "خطا در ارتباط با هوش مصنوعی.";
-if ($DEBUG) {
-    $msg .= " (کد: $httpCode" . ($curlError ? " - $curlError" : "") . ")";
-}
-respond($msg);
+error_log('AvalAI request failed: HTTP ' . $httpCode . '; cURL error: ' . $curlError);
+respond('در ارتباط با هوش مصنوعی مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید.', 502);
