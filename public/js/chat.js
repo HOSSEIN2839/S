@@ -52,7 +52,7 @@
             price.textContent = p.price_text || '';
             body.appendChild(price);
 
-            if (p.product_url) {
+            if (p.id) {
                 var a = document.createElement('a');
                 a.href = 'product.php?id=' + encodeURIComponent(String(p.id || ''));
                 a.textContent = 'مشاهده محصول';
